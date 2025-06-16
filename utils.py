@@ -147,6 +147,39 @@ def NDCGatK_r(test_data, r, k):
     return np.sum(ndcg)
 
 
+def Diversity_atK(item_embeddings, recommended_items, k):
+    """
+    Compute diversity for a batch of recommendation lists.
+
+    Args:
+        item_embeddings: np.ndarray of shape (num_items, emb_dim)
+        recommended_items: np.ndarray of shape (batch_size, k)
+        k: int, number of recommended items for each user
+
+    Returns:
+        avg_diversity: float, average diversity over the batch
+        diversities: np.ndarray of shape (batch_size,), diversity for each user
+    """
+    batch_size = recommended_items.shape[0]
+    diversities = np.zeros(batch_size)
+    for idx in range(batch_size):
+        rec_ids = recommended_items[idx][:k]
+        if len(rec_ids) <= 1:
+            diversities[idx] = 0.0
+            continue
+        rec_embs = item_embeddings[rec_ids]
+        # Normalize
+        normed = rec_embs / np.linalg.norm(rec_embs, axis=1, keepdims=True)
+        sims = np.dot(normed, normed.T)
+        n = len(rec_ids)
+        sim_sum = np.sum(np.triu(sims, 1))
+        num_pairs = n * (n - 1) / 2
+        avg_sim = sim_sum / num_pairs if num_pairs else 0.0
+        diversities[idx] = 1 - avg_sim
+    avg_diversity = np.mean(diversities)
+    return avg_diversity, diversities
+
+
 def AUC(all_item_scores, dataset, test_data):
     r_all = np.zeros((dataset.m_items,))
     r_all[test_data] = 1

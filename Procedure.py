@@ -11,7 +11,6 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch):
     bpr: utils.BPRLoss = loss_class
     allusers = list(range(dataset.n_users))
     S, sam_time = utils.UniformSample_original(allusers, dataset)
-    # print(f"BPR[sample time][{sam_time[0]:.1f}={sam_time[1]:.2f}+{sam_time[2]:.2f}]")
     users = torch.Tensor(S[:, 0]).long()
     posItems = torch.Tensor(S[:, 1]).long()
     negItems = torch.Tensor(S[:, 2]).long()
@@ -35,19 +34,23 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch):
     return aver_loss
 
 
-def test_one_batch(X):
+def test_one_batch(X, item_embeddings=None, k_list=None):
     sorted_items = X[0].numpy()
     groundTrue = X[1]
     r = utils.getLabel(groundTrue, sorted_items)
-    pre, recall, ndcg = [], [], []
-    for k in world.topks:
+    pre, recall, ndcg, diversity = [], [], [], []
+    for idx, k in enumerate(world.topks if k_list is None else k_list):
         ret = utils.RecallPrecision_ATk(groundTrue, r, k)
         pre.append(ret['precision'])
         recall.append(ret['recall'])
         ndcg.append(utils.NDCGatK_r(groundTrue, r, k))
+        if item_embeddings is not None:
+            avg_div, _ = utils.Diversity_atK(item_embeddings, sorted_items, k)
+            diversity.append(avg_div)
     return {'recall': np.array(recall),
             'precision': np.array(pre),
-            'ndcg': np.array(ndcg)}
+            'ndcg': np.array(ndcg),
+            'diversity': np.array(diversity) if diversity else None}
 
 
 def Test(dataset, Recmodel, epoch, cold=False, w=None):
@@ -60,7 +63,8 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
     max_K = max(world.topks)
     results = {'precision': np.zeros(len(world.topks)),
                'recall': np.zeros(len(world.topks)),
-               'ndcg': np.zeros(len(world.topks))}
+               'ndcg': np.zeros(len(world.topks)),
+               'diversity': np.zeros(len(world.topks))}
     with torch.no_grad():
         users = list(testDict.keys())
         try:
@@ -71,6 +75,8 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
         rating_list = []
         groundTrue_list = []
         total_batch = len(users) // u_batch_size + 1
+        # get embeddings for diversity
+        item_embeddings = Recmodel.final_item.cpu().detach().numpy()
         for batch_users in utils.minibatch(users, batch_size=u_batch_size):
             allPos = dataset.getUserPosItems(batch_users)
             groundTrue = [testDict[u] for u in batch_users]
@@ -93,13 +99,16 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
         X = zip(rating_list, groundTrue_list)
         pre_results = []
         for x in X:
-            pre_results.append(test_one_batch(x))
+            pre_results.append(test_one_batch(x, item_embeddings))
         for result in pre_results:
             results['recall'] += result['recall']
             results['precision'] += result['precision']
             results['ndcg'] += result['ndcg']
+            if result['diversity'] is not None:
+                results['diversity'] += result['diversity']
         results['recall'] /= float(len(users))
         results['precision'] /= float(len(users))
         results['ndcg'] /= float(len(users))
+        results['diversity'] /= float(len(users))
         print(results)
         return results

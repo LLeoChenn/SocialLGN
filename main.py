@@ -27,8 +27,8 @@ if world.LOAD:
     except FileNotFoundError:
         print(f"{weight_file} not exists, start from beginning")
 
-best_ndcg, best_recall, best_pre = 0, 0, 0
-best_ndcg_cold, best_recall_cold, best_pre_cold = 0, 0, 0
+best_ndcg, best_recall, best_pre, best_diversity = 0, 0, 0, 0
+best_ndcg_cold, best_recall_cold, best_pre_cold, best_diversity_cold = 0, 0, 0, 0
 low_count, low_count_cold = 0, 0
 try:
     for epoch in range(world.TRAIN_epochs + 1):
@@ -50,12 +50,14 @@ try:
                 best_recall = results['recall'][0]
                 best_ndcg = results['ndcg'][0]
                 best_pre = results['precision'][0]
+                best_diversity = results['diversity'][0]
                 low_count = 0
 
             if results_cold['ndcg'][0] > best_ndcg_cold:
                 best_recall_cold = results_cold['recall'][0]
                 best_ndcg_cold = results_cold['ndcg'][0]
                 best_pre_cold = results_cold['precision'][0]
+                best_diversity_cold = results_cold['diversity'][0]
                 low_count_cold = 0
 
         loss = Procedure.BPR_train_original(dataset, Recmodel, bpr, epoch)
@@ -65,6 +67,8 @@ finally:
     print(f"\nbest recall at 10:{best_recall}")
     print(f"best ndcg at 10:{best_ndcg}")
     print(f"best precision at 10:{best_pre}")
+    print(f"best diversity at 10:{best_diversity}")
     print(f"\nbest recall at 10:{best_recall_cold}")
     print(f"best ndcg at 10:{best_ndcg_cold}")
     print(f"best precision at 10:{best_pre_cold}")
+    print(f"best diversity at 10:{best_diversity_cold}")
