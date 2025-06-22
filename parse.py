@@ -4,7 +4,7 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser()
     # for hyper parameters
-    parser.add_argument('-m', '--model', type=str, default='SocialLGN')
+    parser.add_argument('-m', '--model', type=str, default='LightGCN')
     parser.add_argument('-d', '--dataset', type=str, default='lastfm')
     parser.add_argument('--recdim', type=int, default=64,
                         help="the embedding size")
@@ -14,12 +14,12 @@ def parse_args():
                         help="the weight decay for l2 normalization")
     parser.add_argument('--bpr_batch', type=int, default=2048,
                         help="the batch size for bpr loss training procedure")
-    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--epochs', type=int, default=2000)
     # for deep model
     parser.add_argument('--layer', type=int, default=3,
                         help="the layer num of graphs")
     # normally unchanged
-    parser.add_argument('--topks', nargs='?', default="[10, 20]",
+    parser.add_argument('--topks', nargs='?', default="[10]",
                         help="@k test list")
     parser.add_argument('--testbatch', type=str, default=100,
                         help="the batch size of users for testing")

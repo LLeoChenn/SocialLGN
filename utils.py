@@ -1,13 +1,12 @@
 import os
 from time import time
-
+from numpy.linalg import norm
 import numpy as np
 import torch
 from sklearn.metrics import roc_auc_score
 from torch import optim
 
 import world
-
 
 class BPRLoss:
     def __init__(self, recmodel, config):
@@ -26,7 +25,6 @@ class BPRLoss:
         self.opt.step()
 
         return loss.cpu().item()
-
 
 def UniformSample_original(users, dataset):
     total_start = time()
@@ -56,7 +54,6 @@ def UniformSample_original(users, dataset):
     total = time() - total_start
     return np.array(S), [total, sample_time1, sample_time2]
 
-
 # ===================end samplers==========================
 # =====================utils====================================
 
@@ -67,7 +64,6 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
     torch.manual_seed(seed)
 
-
 def getFileName():
     if world.model_name == 'bpr':
         file = f"mf-{world.dataset}-{world.config['latent_dim_rec']}.pth.tar"
@@ -75,7 +71,6 @@ def getFileName():
         file = f"{world.model_name}-{world.dataset}-{world.config['layer']}layer-" \
                f"{world.config['latent_dim_rec']}.pth.tar"
     return os.path.join(world.FILE_PATH, file)
-
 
 def minibatch(*tensors, **kwargs):
     batch_size = kwargs.get('batch_size', world.config['bpr_batch_size'])
@@ -87,7 +82,6 @@ def minibatch(*tensors, **kwargs):
     else:
         for i in range(0, len(tensors[0]), batch_size):
             yield tuple(x[i:i + batch_size] for x in tensors)
-
 
 def shuffle(*arrays, **kwargs):
     require_indices = kwargs.get('indices', False)
@@ -109,7 +103,6 @@ def shuffle(*arrays, **kwargs):
     else:
         return result
 
-
 # ====================Metrics==============================
 # =========================================================
 def RecallPrecision_ATk(test_data, r, k):
@@ -120,14 +113,12 @@ def RecallPrecision_ATk(test_data, r, k):
     precis = np.sum(right_pred) / precis_n
     return {'recall': recall, 'precision': precis}
 
-
 def MRRatK_r(r, k):
     pred_data = r[:, :k]
     scores = np.log2(1. / np.arange(1, k + 1))
     pred_data = pred_data / scores
     pred_data = pred_data.sum(1)
     return np.sum(pred_data)
-
 
 def NDCGatK_r(test_data, r, k):
     assert len(r) == len(test_data)
@@ -145,7 +136,6 @@ def NDCGatK_r(test_data, r, k):
     ndcg = dcg / idcg
     ndcg[np.isnan(ndcg)] = 0.
     return np.sum(ndcg)
-
 
 def Diversity_atK(item_embeddings, recommended_items, k):
     """
@@ -178,6 +168,47 @@ def Diversity_atK(item_embeddings, recommended_items, k):
         diversities[idx] = 1 - avg_sim
     avg_diversity = np.mean(diversities)
     return avg_diversity, diversities
+    
+def HistoryDeviation(user_ids, rec_item_ids, dataset, recmodel, device):
+    """
+    计算历史偏离度（History Deviation），统一使用模型的 embedding_item 获取物品嵌入
+    :param user_ids: 当前 batch 的用户 ID 列表，shape: [batch_size]
+    :param rec_item_ids: 当前 batch 每个用户的推荐物品 ID 列表，shape: [batch_size, topk] 
+    :param dataset: 数据集对象，用于获取用户历史交互物品
+    :param recmodel: 推荐模型对象（PureBPR / LightGCN / SocialLGN）
+    :param device: 计算设备（如 'cuda' 或 'cpu'）
+    :return: 当前 batch 历史偏离度的均值，以及每个用户的偏离度列表
+    """
+    deviation_list = []
+    
+    for i, user_id in enumerate(user_ids):
+        # 1. 获取用户历史兴趣向量：历史交互物品嵌入的均值
+        user_hist_items = dataset.allPos[user_id]  # 用户历史交互物品 ID
+        if len(user_hist_items) == 0:
+            deviation_list.append(1.0)  # 无历史交互，偏离度设为 1
+            continue
+        
+        # 2. 获取历史物品嵌入并计算均值
+        hist_item_ids_tensor = torch.tensor(user_hist_items).long().to(device)
+        hist_item_embs = recmodel.embedding_item(hist_item_ids_tensor).detach().cpu().numpy()
+        user_hist_emb = np.mean(hist_item_embs, axis=0)  # 历史兴趣向量
+        
+        # 3. 获取推荐物品嵌入并计算均值
+        rec_items = rec_item_ids[i]
+        rec_item_ids_tensor = torch.tensor(rec_items).long().to(device)
+        rec_item_embs = recmodel.embedding_item(rec_item_ids_tensor).detach().cpu().numpy()
+        rec_agg_emb = np.mean(rec_item_embs, axis=0)  # 推荐聚合向量
+        
+        # 4. 计算余弦相似度和偏离度
+        cos_sim = np.dot(user_hist_emb, rec_agg_emb) / (norm(user_hist_emb) * norm(rec_agg_emb)) \
+            if (norm(user_hist_emb) * norm(rec_agg_emb)) != 0 else 0.0
+        deviation = 1 - cos_sim
+        deviation_list.append(deviation)
+    
+    mean_deviation = np.mean(deviation_list) if deviation_list else 0.0
+    return mean_deviation, deviation_list
+
+
 
 
 def AUC(all_item_scores, dataset, test_data):
@@ -186,7 +217,6 @@ def AUC(all_item_scores, dataset, test_data):
     r = r_all[all_item_scores >= 0]
     test_item_scores = all_item_scores[all_item_scores >= 0]
     return roc_auc_score(r, test_item_scores)
-
 
 def getLabel(test_data, pred_data):
     r = []

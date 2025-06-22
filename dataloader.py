@@ -14,7 +14,6 @@ from sklearn.model_selection import train_test_split, GroupShuffleSplit
 
 import world
 
-
 def _convert_sp_mat_to_sp_tensor(X):
     coo = X.tocoo().astype(np.float32)
     row = torch.Tensor(coo.row).long()
@@ -22,7 +21,6 @@ def _convert_sp_mat_to_sp_tensor(X):
     index = torch.stack([row, col])
     data = torch.FloatTensor(coo.data)
     return torch.sparse.FloatTensor(index, data, torch.Size(coo.shape))
-
 
 class PairDataset:
     def __init__(self, src="lastfm"):
@@ -49,6 +47,10 @@ class PairDataset:
         print(f"Number of Ratings: {self._trainDataSize + self._testDataSize}")
         print(f"{world.dataset} Rating Density: {(self._trainDataSize + self._testDataSize) / self.n_user / self.m_item}")
 
+        # 新增：物品流行度相关属性
+        self.item_popularity = None
+        self.total_interactions = 0
+        
         # build (users,items), bipartite graph
         self.interactionGraph = None
         self.UserItemNet = csr_matrix((np.ones(len(self.train_set)), (self.trainUser, self.trainItem)),
@@ -59,6 +61,31 @@ class PairDataset:
         self._testDic = self.__build_test()
         self._coldTestDic = self.__build_cold_test()
         self._userDic, self._itemDic = self._getInteractionDic()
+        
+    # 新增：获取物品流行度的方法
+    def getItemPopularity(self, item_id):
+        """获取物品的流行度（被交互概率）"""
+        if self.item_popularity is None:
+            self._calculateItemPopularity()
+        return self.item_popularity.get(item_id, 1e-10)  # 避免未见过的物品概率为0
+    
+    # 新增：计算物品流行度的方法
+    def _calculateItemPopularity(self):
+        """计算所有物品的流行度"""
+        print("Calculating item popularity...")
+        self.item_popularity = {}
+        self.total_interactions = 0
+        
+        # 假设self.trainData是用户-物品交互数据，格式为[(user_id, item_id), ...]
+        for user, item in zip(self.trainUser, self.trainItem):
+            self.item_popularity[item] = self.item_popularity.get(item, 0) + 1
+            self.total_interactions += 1
+        
+        # 转换为概率
+        for item in self.item_popularity:
+            self.item_popularity[item] /= self.total_interactions
+            
+        print(f"Item popularity calculated. Total items: {len(self.item_popularity)}, Total interactions: {self.total_interactions}")
 
     @property
     def userDic(self):
@@ -155,7 +182,6 @@ class PairDataset:
         getDict(self.test_set)
         return user_interaction, item_interaction
 
-
 class GraphDataset(PairDataset):
     def __init__(self, src):
         super(GraphDataset, self).__init__(src)
@@ -191,7 +217,6 @@ class GraphDataset(PairDataset):
             self.interactionGraph = _convert_sp_mat_to_sp_tensor(norm_adj)
             self.interactionGraph = self.interactionGraph.coalesce().to(world.device)
         return self.interactionGraph
-
 
 class SocialGraphDataset(GraphDataset):
     def __init__(self, src):
@@ -239,7 +264,6 @@ class SocialGraphDataset(GraphDataset):
         else:
             pass
         return self.socialGraph
-
 
 def loadInteraction(src='lastfm', prepro='origin', binary=True, posThreshold=None, level='ui'):
     """
@@ -380,7 +404,6 @@ def loadInteraction(src='lastfm', prepro='origin', binary=True, posThreshold=Non
     logging.info(f'Finish loading [{src}]-[{prepro}] dataset')
     return df[['user', 'item']], userNum, itemNum
 
-
 def loadFriend(src):
     path = f'./data/preprocessed/{src}/trust.txt'
     if os.path.exists(path):
@@ -410,7 +433,6 @@ def loadFriend(src):
     friendNet.to_csv(path, index=False)
     return friendNet
 
-
 def renameFriendID(src: str, friendNet: pd.DataFrame):
     with open(f"./data/preprocessed/{src}/userReindex.json") as f:
         userReindex = json.load(f)
@@ -419,13 +441,11 @@ def renameFriendID(src: str, friendNet: pd.DataFrame):
     friendNet = friendNet.drop(friendNet[(friendNet['user'] == -1) | (friendNet['friend'] == -1)].index)
     return friendNet
 
-
 def reIndex(x, userReindex):
     if str(x) in userReindex.keys():
         return userReindex[str(x)]
     else:
         return -1
-
 
 def splitDataset(df, testMethod='fo', testSize=.2):
     """

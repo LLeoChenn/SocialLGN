@@ -4,6 +4,26 @@ import torch
 import utils
 import world
 
+# 新增：计算新颖性的函数
+def calculateNovelty(dataset, recommendedItems):
+    """
+    计算推荐结果的新颖性
+    :param dataset: 数据集对象
+    :param recommendedItems: 推荐的物品列表，形状为 [用户数, topk]
+    :return: 新颖性数值
+    """
+    noveltySum = 0
+    n = 0
+    for userItems in recommendedItems:
+        for item in userItems:
+            p_i = dataset.getItemPopularity(item)
+            if p_i > 0:  
+                # 避免对数无意义
+                noveltySum += -np.log2(p_i)  # 使用log2更符合信息论定义
+                n += 1
+    if n == 0:
+        return 0
+    return noveltySum / n
 
 def BPR_train_original(dataset, recommend_model, loss_class, epoch):
     Recmodel = recommend_model
@@ -33,7 +53,6 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch):
     aver_loss = aver_loss / total_batch
     return aver_loss
 
-
 def test_one_batch(X, item_embeddings=None, k_list=None):
     sorted_items = X[0].numpy()
     groundTrue = X[1]
@@ -52,7 +71,6 @@ def test_one_batch(X, item_embeddings=None, k_list=None):
             'ndcg': np.array(ndcg),
             'diversity': np.array(diversity) if diversity else None}
 
-
 def Test(dataset, Recmodel, epoch, cold=False, w=None):
     u_batch_size = world.config['test_u_batch_size']
     if cold:
@@ -64,7 +82,13 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
     results = {'precision': np.zeros(len(world.topks)),
                'recall': np.zeros(len(world.topks)),
                'ndcg': np.zeros(len(world.topks)),
-               'diversity': np.zeros(len(world.topks))}
+               'diversity': np.zeros(len(world.topks)),
+               'history_deviation': 0.0,  # 新增历史偏离度指标
+               'novelty': np.zeros(len(world.topks))}  # 新增新颖性指标
+    
+    # 新增：用于收集推荐的物品，后续计算新颖性
+    recommendedItemsList = []  
+    
     with torch.no_grad():
         users = list(testDict.keys())
         try:
@@ -75,8 +99,17 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
         rating_list = []
         groundTrue_list = []
         total_batch = len(users) // u_batch_size + 1
+        total_history_deviation = 0.0
+       
         # get embeddings for diversity
-        item_embeddings = Recmodel.final_item.cpu().detach().numpy()
+        if hasattr(Recmodel, "final_item"):
+            item_embeddings = Recmodel.final_item.cpu().detach().numpy()
+        elif hasattr(Recmodel, "embedding_item"):
+            item_embeddings = Recmodel.embedding_item.weight.cpu().detach().numpy()
+        else:
+            item_embeddings = None
+
+        
         for batch_users in utils.minibatch(users, batch_size=u_batch_size):
             allPos = dataset.getUserPosItems(batch_users)
             groundTrue = [testDict[u] for u in batch_users]
@@ -95,6 +128,20 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
             users_list.append(batch_users)
             rating_list.append(rating_K.cpu())
             groundTrue_list.append(groundTrue)
+            
+            # 新增：收集推荐的物品
+            recommendedItemsList.extend(rating_K.cpu().numpy())  
+            
+            batch_rec_items = rating_K.cpu().numpy()  # 推荐物品ID
+            batch_deviation, _ = utils.HistoryDeviation(
+                batch_users, 
+                batch_rec_items, 
+                dataset, 
+                Recmodel,
+                world.device
+            )
+            total_history_deviation += batch_deviation * len(batch_users)  # 加权求和
+        
         assert total_batch == len(users_list)
         X = zip(rating_list, groundTrue_list)
         pre_results = []
@@ -106,9 +153,18 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
             results['ndcg'] += result['ndcg']
             if result['diversity'] is not None:
                 results['diversity'] += result['diversity']
+        
         results['recall'] /= float(len(users))
         results['precision'] /= float(len(users))
         results['ndcg'] /= float(len(users))
         results['diversity'] /= float(len(users))
+        results['history_deviation'] = total_history_deviation / float(len(users))
+        
+        # 新增：计算并输出新颖性
+        novelty = calculateNovelty(dataset, recommendedItemsList)
+        results['novelty'] = np.array([novelty] * len(world.topks))  
+        
+        print(f"新颖性（Novelty）: {novelty}")
         print(results)
+
         return results
