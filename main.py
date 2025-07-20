@@ -37,7 +37,8 @@ train_history = pd.DataFrame(columns=columns)
 
 best_ndcg, best_recall, best_pre, best_diversity = 0, 0, 0, 0
 best_ndcg_cold, best_recall_cold, best_pre_cold, best_diversity_cold = 0, 0, 0, 0
-best_deviation, best_deviation_cold = 1.0, 1.0  # 初始化历史偏离度最佳值
+best_novelty, best_novelty_cold = 0, 0
+best_history_deviation, best_history_deviation_cold = 0, 0
 low_count, low_count_cold = 0, 0
 try:
     for epoch in range(world.TRAIN_epochs + 1):
@@ -126,4 +127,4 @@ finally:
     # history_file = weight_file.replace('.pth', '_history_test.csv')
     history_file = 'test.csv'
     train_history.to_csv(history_file,mode='a', index=False)
-    print(f"\n训练历史已保存到: {history_file}")  
+    print(f"\n训练历史已保存到: {history_file}")

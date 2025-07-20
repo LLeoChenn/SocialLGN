@@ -114,9 +114,36 @@ class LightGCN(nn.Module):
         neg_scores = torch.mul(users_emb, neg_emb)
         neg_scores = torch.sum(neg_scores, dim=1)
 
-        loss = torch.mean(torch.nn.functional.softplus(neg_scores - pos_scores))
+        bpr_loss = torch.mean(torch.nn.functional.softplus(neg_scores - pos_scores))
+        
+        # Calculate diversity loss
+        diversity_loss = self.calculate_diversity_loss(users.long(), pos.long())
+        
+        # Combine losses with diversity weight (lambda)
+        lambda_div = self.config['diversity_weight']
+        loss = bpr_loss + lambda_div * diversity_loss
 
         return loss, reg_loss
+
+    def calculate_diversity_loss(self, users, pos_items):
+        """Calculate diversity loss using ILAD (Intra-List Average Distance)"""
+        all_users, all_items = self.computer()
+        users_emb = all_users[users]
+        scores = self.f(torch.matmul(users_emb, all_items.t()))
+        k = 10
+        _, topk_indices = torch.topk(scores, k)
+        topk_embs = all_items[topk_indices]
+        diversity_loss = 0.0
+        for i in range(k):
+            for j in range(i + 1, k):
+                item_i = topk_embs[:, i, :]
+                item_j = topk_embs[:, j, :]
+                sim = torch.sum(item_i * item_j, dim=1) / (torch.norm(item_i, dim=1) * torch.norm(item_j, dim=1) + 1e-8)
+                dist = 1 - sim
+                diversity_loss += torch.mean(dist)
+        num_pairs = (k * (k - 1)) / 2
+        diversity_loss = diversity_loss / num_pairs
+        return -diversity_loss
 
 
 class SocialLGN(LightGCN):
@@ -151,6 +178,9 @@ class SocialLGN(LightGCN):
         self.final_user, self.final_item = users, items
         return users, items
 
+    def calculate_diversity_loss(self, users, pos_items):
+        return super().calculate_diversity_loss(users, pos_items)
+
 
 class Graph_Comb(nn.Module):
     def __init__(self, embed_dim):
@@ -165,3 +195,38 @@ class Graph_Comb(nn.Module):
         output = self.comb(torch.cat((h1, h2), dim=1))
         output = output / output.norm(2)
         return output
+
+    def calculate_diversity_loss(self, users, pos_items):
+        """Calculate diversity loss using ILAD (Intra-List Average Distance)"""
+        all_users, all_items = self.computer()
+        users_emb = all_users[users]
+        
+        # Get user-specific item scores
+        scores = self.f(torch.matmul(users_emb, all_items.t()))  # [batch_size, num_items]
+        
+        # Get top-k items for each user (k=10)
+        k = 10
+        _, topk_indices = torch.topk(scores, k)
+        
+        # Get embeddings for top-k items
+        topk_embs = all_items[topk_indices]  # [batch_size, k, emb_dim]
+        
+        # Calculate pairwise distances between items in the top-k list
+        diversity_loss = 0.0
+        for i in range(k):
+            for j in range(i + 1, k):
+                # Calculate cosine similarity between items
+                item_i = topk_embs[:, i, :]  # [batch_size, emb_dim]
+                item_j = topk_embs[:, j, :]  # [batch_size, emb_dim]
+                
+                sim = torch.sum(item_i * item_j, dim=1) / (torch.norm(item_i, dim=1) * torch.norm(item_j, dim=1))
+                # Convert similarity to distance: d = 1 - sim
+                dist = 1 - sim
+                diversity_loss += torch.mean(dist)
+        
+        # Normalize by number of pairs
+        num_pairs = (k * (k - 1)) / 2
+        diversity_loss = diversity_loss / num_pairs
+        
+        # Negative because we want to maximize diversity (minimize negative diversity)
+        return -diversity_loss

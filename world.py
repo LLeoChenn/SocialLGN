@@ -31,6 +31,7 @@ config['decay'] = args.decay
 
 config['test_u_batch_size'] = args.testbatch
 
+config['diversity_weight'] = args.diversity_weight
 
 GPU = torch.cuda.is_available()
 device = torch.device('cuda' if GPU else "cpu")
