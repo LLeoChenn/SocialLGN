@@ -126,23 +126,25 @@ class LightGCN(nn.Module):
         return loss, reg_loss
 
     def calculate_diversity_loss(self, users, pos_items):
-        """Calculate diversity loss using ILAD (Intra-List Average Distance)"""
+        """高效向量化计算ILAD（Intra-List Average Distance）"""
         all_users, all_items = self.computer()
         users_emb = all_users[users]
         scores = self.f(torch.matmul(users_emb, all_items.t()))
-        k = 10
+        k = 20  # 可调
         _, topk_indices = torch.topk(scores, k)
-        topk_embs = all_items[topk_indices]
-        diversity_loss = 0.0
-        for i in range(k):
-            for j in range(i + 1, k):
-                item_i = topk_embs[:, i, :]
-                item_j = topk_embs[:, j, :]
-                sim = torch.sum(item_i * item_j, dim=1) / (torch.norm(item_i, dim=1) * torch.norm(item_j, dim=1) + 1e-8)
-                dist = 1 - sim
-                diversity_loss += torch.mean(dist)
-        num_pairs = (k * (k - 1)) / 2
-        diversity_loss = diversity_loss / num_pairs
+        topk_embs = all_items[topk_indices]  # [batch, k, emb_dim]
+        # 归一化
+        topk_embs_norm = torch.nn.functional.normalize(topk_embs, dim=2)
+        # 计算所有pairwise余弦相似度 [batch, k, k]
+        sim_matrix = torch.bmm(topk_embs_norm, topk_embs_norm.transpose(1, 2))
+        # 距离矩阵
+        dist_matrix = 1 - sim_matrix
+        # 只取上三角（不含对角线）
+        batch_size = dist_matrix.shape[0]
+        mask = torch.triu(torch.ones(k, k, device=dist_matrix.device), diagonal=1).bool()
+        pairwise_dist = dist_matrix[:, mask]  # [batch, k*(k-1)/2]
+        # 求均值
+        diversity_loss = pairwise_dist.mean()
         return -diversity_loss
 
 
