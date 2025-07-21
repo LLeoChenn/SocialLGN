@@ -34,3 +34,17 @@ epoch,loss,recall,ndcg,precision,diversity,recall_cold,ndcg_cold,precision_cold,
 23,0.11160189759086918,,,,,,,,,,,,
 24,0.10557459657256668,,,,,,,,,,,,
 25,0.10509376852093516,,,,,,,,,,,,
+epoch,loss,recall,ndcg,precision,diversity,recall_cold,ndcg_cold,precision_cold,diversity_cold,novelty,novelty_cold,history_deviation,history_deviation_cold
+epoch,loss,recall,ndcg,precision,diversity,recall_cold,ndcg_cold,precision_cold,diversity_cold,novelty,novelty_cold,history_deviation,history_deviation_cold
+0,0.6853375644297213,,,,,,,,,,,,
+1,0.6543610804789776,0.07295725501880665,0.088372550305738,0.07017543859649122,0.004974736159136567,0.08653846153846152,0.062101461998823444,0.016666666666666666,0.027916805094314948,10.135011733952588,12.634455463875872,0.47405326,0.50398797
+epoch,loss,recall,ndcg,precision,diversity,recall_cold,ndcg_cold,precision_cold,diversity_cold,novelty,novelty_cold,history_deviation,history_deviation_cold
+0,0.6059190405381693,,,,,,,,,,,,
+1,0.598913191138087,0.0007013633585075559,0.0006599826381241925,0.0007442849548112706,0.008628221528895088,0.0,0.0,0.0,0.035643840519090496,17.078295555597997,17.344023458481825,0.9071596,0.8276553
+2,0.5915663032918363,,,,,,,,,,,,
+3,0.5840046856854413,,,,,,,,,,,,
+4,0.5757704522158649,,,,,,,,,,,,
+5,0.5672762087873511,,,,,,,,,,,,
+6,0.5556953436619526,,,,,,,,,,,,
+7,0.5430724282522459,,,,,,,,,,,,
+8,0.527963633472855,,,,,,,,,,,,

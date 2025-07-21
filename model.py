@@ -39,7 +39,26 @@ class PureBPR(nn.Module):
         reg_loss = (1 / 2) * (users_emb.norm(2).pow(2) +
                               pos_emb.norm(2).pow(2) +
                               neg_emb.norm(2).pow(2)) / float(len(users))
+        # 加入diversity loss
+        lambda_div = self.f.config['diversity_weight'] if hasattr(self, 'config') and 'diversity_weight' in self.config else 0.1
+        diversity_loss = self.calculate_diversity_loss(users.long())
+        loss = loss + lambda_div * diversity_loss
         return loss, reg_loss
+
+    def calculate_diversity_loss(self, users):
+        users_emb = self.embedding_user(users)
+        items_emb = self.embedding_item.weight
+        scores = self.f(torch.matmul(users_emb, items_emb.t()))
+        k = 20  # 可调
+        _, topk_indices = torch.topk(scores, k)
+        topk_embs = items_emb[topk_indices]  # [batch, k, emb_dim]
+        topk_embs_norm = torch.nn.functional.normalize(topk_embs, dim=2)
+        sim_matrix = torch.bmm(topk_embs_norm, topk_embs_norm.transpose(1, 2))
+        dist_matrix = 1 - sim_matrix
+        mask = torch.triu(torch.ones(k, k, device=dist_matrix.device), diagonal=1).bool()
+        pairwise_dist = dist_matrix[:, mask]
+        diversity_loss = pairwise_dist.mean()
+        return -diversity_loss
 
 
 class LightGCN(nn.Module):
@@ -115,17 +134,13 @@ class LightGCN(nn.Module):
         neg_scores = torch.sum(neg_scores, dim=1)
 
         bpr_loss = torch.mean(torch.nn.functional.softplus(neg_scores - pos_scores))
-        
-        # Calculate diversity loss
-        diversity_loss = self.calculate_diversity_loss(users.long(), pos.long())
-        
-        # Combine losses with diversity weight (lambda)
+        # 统一调用方式
+        diversity_loss = self.calculate_diversity_loss(users.long())
         lambda_div = self.config['diversity_weight']
         loss = bpr_loss + lambda_div * diversity_loss
-
         return loss, reg_loss
 
-    def calculate_diversity_loss(self, users, pos_items):
+    def calculate_diversity_loss(self, users):
         """高效向量化计算ILAD（Intra-List Average Distance）"""
         all_users, all_items = self.computer()
         users_emb = all_users[users]
@@ -133,17 +148,11 @@ class LightGCN(nn.Module):
         k = 20  # 可调
         _, topk_indices = torch.topk(scores, k)
         topk_embs = all_items[topk_indices]  # [batch, k, emb_dim]
-        # 归一化
         topk_embs_norm = torch.nn.functional.normalize(topk_embs, dim=2)
-        # 计算所有pairwise余弦相似度 [batch, k, k]
         sim_matrix = torch.bmm(topk_embs_norm, topk_embs_norm.transpose(1, 2))
-        # 距离矩阵
         dist_matrix = 1 - sim_matrix
-        # 只取上三角（不含对角线）
-        batch_size = dist_matrix.shape[0]
         mask = torch.triu(torch.ones(k, k, device=dist_matrix.device), diagonal=1).bool()
-        pairwise_dist = dist_matrix[:, mask]  # [batch, k*(k-1)/2]
-        # 求均值
+        pairwise_dist = dist_matrix[:, mask]
         diversity_loss = pairwise_dist.mean()
         return -diversity_loss
 
@@ -180,8 +189,8 @@ class SocialLGN(LightGCN):
         self.final_user, self.final_item = users, items
         return users, items
 
-    def calculate_diversity_loss(self, users, pos_items):
-        return super().calculate_diversity_loss(users, pos_items)
+    def calculate_diversity_loss(self, users):
+        return super().calculate_diversity_loss(users)
 
 
 class Graph_Comb(nn.Module):
