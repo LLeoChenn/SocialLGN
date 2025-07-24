@@ -72,7 +72,7 @@ class PairDataset:
     # 新增：计算物品流行度的方法
     def _calculateItemPopularity(self):
         """计算所有物品的流行度"""
-        print("Calculating item popularity...")
+        # print("Calculating item popularity...")
         self.item_popularity = {}
         self.total_interactions = 0
         
@@ -85,7 +85,7 @@ class PairDataset:
         for item in self.item_popularity:
             self.item_popularity[item] /= self.total_interactions
             
-        print(f"Item popularity calculated. Total items: {len(self.item_popularity)}, Total interactions: {self.total_interactions}")
+        # print(f"Item popularity calculated. Total items: {len(self.item_popularity)}, Total interactions: {self.total_interactions}")
 
     @property
     def userDic(self):

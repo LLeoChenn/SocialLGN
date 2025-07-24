@@ -27,4 +27,6 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=2020, help='random seed')
     parser.add_argument('--diversity_weight', type=float, default=1e-5,
                         help="weight for the diversity loss term")
+    parser.add_argument('--use_layer_attention', type=int, default=1,
+                        help="whether to use layer attention (0: no, 1: yes)")
     return parser.parse_args()

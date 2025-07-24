@@ -3,6 +3,31 @@ import torch
 import torch.nn as nn
 
 
+class LayerAttention(nn.Module):
+    """Layer attention module to learn weights for different layer embeddings"""
+    def __init__(self, in_features, num_layers):
+        super(LayerAttention, self).__init__()
+        self.attention = nn.Sequential(
+            nn.Linear(in_features, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1, bias=False)
+        )
+        
+    def forward(self, layer_embeddings):
+        # layer_embeddings shape: [N, num_layers, dim]
+        attention_weights = []
+        for i in range(layer_embeddings.shape[1]):  # for each layer
+            layer_emb = layer_embeddings[:, i, :]  # [N, dim]
+            weight = self.attention(layer_emb)  # [N, 1]
+            attention_weights.append(weight)
+        
+        attention_weights = torch.stack(attention_weights, dim=1)  # [N, num_layers, 1]
+        attention_weights = torch.softmax(attention_weights, dim=1)  # normalize weights
+        
+        # weighted sum
+        weighted_embedding = torch.sum(attention_weights * layer_embeddings, dim=1)  # [N, dim]
+        return weighted_embedding, attention_weights
+
 class PureBPR(nn.Module):
     def __init__(self, config, dataset):
         super(PureBPR, self).__init__()
@@ -82,6 +107,11 @@ class LightGCN(nn.Module):
         nn.init.normal_(self.embedding_item.weight, std=0.1)
         self.f = nn.Sigmoid()
         self.interactionGraph = self.dataset.getInteractionGraph()
+        self.use_layer_attention = self.config.get('use_layer_attention', 1)
+        if self.use_layer_attention:
+            # Add layer attention modules
+            self.layer_attention_users = LayerAttention(self.latent_dim, self.n_layers + 1)
+            self.layer_attention_items = LayerAttention(self.latent_dim, self.n_layers + 1)
         print(f"{world.model_name} is already to go")
 
     def computer(self):
@@ -98,11 +128,25 @@ class LightGCN(nn.Module):
         for layer in range(self.n_layers):
             all_emb = torch.sparse.mm(G, all_emb)
             embs.append(all_emb)
-        embs = torch.stack(embs, dim=1)
-        # print(embs.size())
-        light_out = torch.mean(embs, dim=1)
-        users, items = torch.split(light_out, [self.num_users, self.num_items])
-        self.final_user, self.final_item = users, items
+        embs = torch.stack(embs, dim=1)  # [n_users+n_items, n_layers+1, dim]
+        
+        if self.use_layer_attention:
+            # Split embeddings for users and items
+            users_embs, items_embs = torch.split(embs, [self.num_users, self.num_items])
+            
+            # Apply layer attention separately for users and items
+            users, user_weights = self.layer_attention_users(users_embs)  # [n_users, dim]
+            items, item_weights = self.layer_attention_items(items_embs)  # [n_items, dim]
+            
+            self.final_user, self.final_item = users, items
+            self.user_attention_weights = user_weights  # Store for analysis
+            self.item_attention_weights = item_weights
+        else:
+            # Use mean pooling like original LightGCN
+            light_out = torch.mean(embs, dim=1)
+            users, items = torch.split(light_out, [self.num_users, self.num_items])
+            self.final_user, self.final_item = users, items
+        
         return users, items
 
     def getUsersRating(self, users):
@@ -183,10 +227,18 @@ class SocialLGN(LightGCN):
             users_emb_next = self.Graph_Comb(users_emb_social, users_emb_interaction)
             all_emb = torch.cat([users_emb_next, items_emb_next])
             embs.append(all_emb)
-        embs = torch.stack(embs, dim=1)
-        final_embs = torch.mean(embs, dim=1)
-        users, items = torch.split(final_embs, [self.num_users, self.num_items])
+        embs = torch.stack(embs, dim=1)  # [n_users+n_items, n_layers+1, dim]
+        
+        # Split embeddings for users and items
+        users_embs, items_embs = torch.split(embs, [self.num_users, self.num_items])
+        
+        # Apply layer attention separately for users and items
+        users, user_weights = self.layer_attention_users(users_embs)  # [n_users, dim]
+        items, item_weights = self.layer_attention_items(items_embs)  # [n_items, dim]
+        
         self.final_user, self.final_item = users, items
+        self.user_attention_weights = user_weights  # Store for analysis
+        self.item_attention_weights = item_weights
         return users, items
 
     def calculate_diversity_loss(self, users):
