@@ -100,8 +100,8 @@ try:
                 best_history_deviation_cold = results_cold['history_deviation']
                 low_count_cold = 0
 
-        loss = Procedure.BPR_train_original(dataset, Recmodel, bpr, epoch)
-        print(f'[saved][BPR aver loss{loss:.3e}]')
+        loss, diversity_loss = Procedure.BPR_train_original(dataset, Recmodel, bpr, epoch)
+        print(f'[saved][BPR aver loss {loss:.3e}] [diversity loss {diversity_loss:.3e}]')
 
         # 保存损失值到DataFrame
         epoch_data['loss'] = loss

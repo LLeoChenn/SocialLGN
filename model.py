@@ -45,6 +45,13 @@ class PureBPR(nn.Module):
         loss = loss + lambda_div * diversity_loss
         return loss, reg_loss
 
+    def bpr_loss_with_diversity(self, users, pos, neg):
+        loss, reg_loss = self.bpr_loss(users, pos, neg)
+        # diversity_loss单独计算
+        diversity_loss = self.calculate_diversity_loss(users)
+        bpr_loss_value = loss - (self.f.config['diversity_weight'] if hasattr(self, 'config') and 'diversity_weight' in self.config else 0.1) * diversity_loss
+        return bpr_loss_value, reg_loss, diversity_loss
+
     def calculate_diversity_loss(self, users):
         users_emb = self.embedding_user(users)
         items_emb = self.embedding_item.weight
@@ -140,6 +147,22 @@ class LightGCN(nn.Module):
         loss = bpr_loss + lambda_div * diversity_loss
         return loss, reg_loss
 
+    def bpr_loss_with_diversity(self, users, pos, neg):
+        (users_emb, pos_emb, neg_emb,
+         userEmb0, posEmb0, negEmb0) = self.getEmbedding(users.long(), pos.long(), neg.long())
+        reg_loss = (1 / 2) * (userEmb0.norm(2).pow(2) +
+                              posEmb0.norm(2).pow(2) +
+                              negEmb0.norm(2).pow(2)) / float(len(users))
+        pos_scores = torch.mul(users_emb, pos_emb)
+        pos_scores = torch.sum(pos_scores, dim=1)
+        neg_scores = torch.mul(users_emb, neg_emb)
+        neg_scores = torch.sum(neg_scores, dim=1)
+        bpr_loss = torch.mean(torch.nn.functional.softplus(neg_scores - pos_scores))
+        diversity_loss = self.calculate_diversity_loss(users.long())
+        lambda_div = self.config['diversity_weight']
+        total_loss = bpr_loss + lambda_div * diversity_loss
+        return bpr_loss, reg_loss, diversity_loss
+
     def calculate_diversity_loss(self, users):
         """高效向量化计算ILAD（Intra-List Average Distance）"""
         all_users, all_items = self.computer()
@@ -188,6 +211,9 @@ class SocialLGN(LightGCN):
         users, items = torch.split(final_embs, [self.num_users, self.num_items])
         self.final_user, self.final_item = users, items
         return users, items
+
+    def bpr_loss_with_diversity(self, users, pos, neg):
+        return super().bpr_loss_with_diversity(users, pos, neg)
 
     def calculate_diversity_loss(self, users):
         return super().calculate_diversity_loss(users)

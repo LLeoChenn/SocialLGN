@@ -41,6 +41,7 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch):
     users, posItems, negItems = utils.shuffle(users, posItems, negItems)
     total_batch = len(users) // world.config['bpr_batch_size'] + 1
     aver_loss = 0.
+    aver_div_loss = 0.
     for (batch_i,
          (batch_users,
           batch_pos,
@@ -48,10 +49,14 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch):
                                                    posItems,
                                                    negItems,
                                                    batch_size=world.config['bpr_batch_size'])):
-        cri = bpr.stageOne(batch_users, batch_pos, batch_neg)
+        # 获取loss和diversity loss
+        loss, reg_loss, diversity_loss = Recmodel.bpr_loss_with_diversity(batch_users, batch_pos, batch_neg)
+        cri = loss + reg_loss
         aver_loss += cri
+        aver_div_loss += diversity_loss
     aver_loss = aver_loss / total_batch
-    return aver_loss
+    aver_div_loss = aver_div_loss / total_batch
+    return aver_loss, aver_div_loss
 
 def test_one_batch(X, item_embeddings=None, k_list=None):
     sorted_items = X[0].numpy()

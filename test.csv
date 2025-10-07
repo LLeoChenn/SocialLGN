@@ -48,3 +48,6 @@ epoch,loss,recall,ndcg,precision,diversity,recall_cold,ndcg_cold,precision_cold,
 6,0.5556953436619526,,,,,,,,,,,,
 7,0.5430724282522459,,,,,,,,,,,,
 8,0.527963633472855,,,,,,,,,,,,
+epoch,loss,recall,ndcg,precision,diversity,recall_cold,ndcg_cold,precision_cold,diversity_cold,novelty,novelty_cold,history_deviation,history_deviation_cold
+epoch,loss,recall,ndcg,precision,diversity,recall_cold,ndcg_cold,precision_cold,diversity_cold,novelty,novelty_cold,history_deviation,history_deviation_cold
+0,"tensor(1.6516, device='cuda:0', grad_fn=<DivBackward0>)",,,,,,,,,,,,

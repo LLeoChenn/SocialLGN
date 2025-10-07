@@ -14,17 +14,17 @@ def parse_args():
                         help="the weight decay for l2 normalization")
     parser.add_argument('--bpr_batch', type=int, default=2048,
                         help="the batch size for bpr loss training procedure")
-    parser.add_argument('--epochs', type=int, default=2000)
+    parser.add_argument('--epochs', type=int, default=1000)
     # for deep model
     parser.add_argument('--layer', type=int, default=3,
                         help="the layer num of graphs")
     # normally unchanged
-    parser.add_argument('--topks', nargs='?', default="[10]",
+    parser.add_argument('--topks', nargs='?', default="[50]",
                         help="@k test list")
     parser.add_argument('--testbatch', type=str, default=100,
                         help="the batch size of users for testing")
     parser.add_argument('--load', type=int, default=0)
     parser.add_argument('--seed', type=int, default=2020, help='random seed')
-    parser.add_argument('--diversity_weight', type=float, default=1e-5,
+    parser.add_argument('--diversity_weight', type=float, default=1e-4,
                         help="weight for the diversity loss term")
     return parser.parse_args()
