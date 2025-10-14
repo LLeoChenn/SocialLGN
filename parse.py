@@ -18,6 +18,8 @@ def parse_args():
     # for deep model
     parser.add_argument('--layer', type=int, default=3,
                         help="the layer num of graphs")
+    parser.add_argument('--layer_attention', type=int, default=1,
+                        help="use layer attention (1: enable, 0: disable)")
     # normally unchanged
     parser.add_argument('--topks', nargs='?', default="[10]",
                         help="@k test list")

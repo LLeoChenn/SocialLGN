@@ -22,6 +22,7 @@ all_dataset = ['lastfm', 'ciao']
 all_models = ['bpr', 'LightGCN', 'SocialLGN']
 
 config['layer'] = args.layer
+config['layer_attention'] = args.layer_attention
 
 config['bpr_batch_size'] = args.bpr_batch
 config['latent_dim_rec'] = args.recdim

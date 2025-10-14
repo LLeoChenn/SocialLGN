@@ -47,6 +47,7 @@ class LightGCN(nn.Module):
         super(LightGCN, self).__init__()
         self.config = config
         self.dataset = dataset
+        self.layer_attention = config.get('layer_attention', 1)
         self._init_weight()
 
     def _init_weight(self):
@@ -63,6 +64,10 @@ class LightGCN(nn.Module):
         nn.init.normal_(self.embedding_item.weight, std=0.1)
         self.f = nn.Sigmoid()
         self.interactionGraph = self.dataset.getInteractionGraph()
+        self.layer_attention = self.config.get('layer_attention', 1)
+        if self.layer_attention:
+            # 层注意力参数，初始化为均匀分布
+            self.attention_weights = nn.Parameter(torch.ones(self.n_layers + 1) / (self.n_layers + 1))
         print(f"{world.model_name} is already to go")
 
     def computer(self):
@@ -72,16 +77,19 @@ class LightGCN(nn.Module):
         users_emb = self.embedding_user.weight
         items_emb = self.embedding_item.weight
         all_emb = torch.cat([users_emb, items_emb])
-        #   torch.split(all_emb , [self.num_users, self.num_items])
         embs = [all_emb]
         G = self.interactionGraph
 
         for layer in range(self.n_layers):
             all_emb = torch.sparse.mm(G, all_emb)
             embs.append(all_emb)
-        embs = torch.stack(embs, dim=1)
-        # print(embs.size())
-        light_out = torch.mean(embs, dim=1)
+        embs = torch.stack(embs, dim=1)  # [num_nodes, n_layers+1, dim]
+        if self.layer_attention:
+            # softmax归一化
+            attn = torch.softmax(self.attention_weights, dim=0)
+            light_out = torch.sum(embs * attn.view(1, -1, 1), dim=1)
+        else:
+            light_out = torch.mean(embs, dim=1)
         users, items = torch.split(light_out, [self.num_users, self.num_items])
         self.final_user, self.final_item = users, items
         return users, items
@@ -133,20 +141,19 @@ class SocialLGN(LightGCN):
         S = self.socialGraph
         embs = [all_emb]
         for layer in range(self.n_layers):
-            # embedding from last layer
             users_emb, items_emb = torch.split(all_emb, [self.num_users, self.num_items])
-            # social network propagation(user embedding)
             users_emb_social = torch.sparse.mm(S, users_emb)
-            # user-item bi-network propagation(user and item embedding)
             all_emb_interaction = torch.sparse.mm(A, all_emb)
-            # get users_emb_interaction
             users_emb_interaction, items_emb_next = torch.split(all_emb_interaction, [self.num_users, self.num_items])
-            # graph fusion model
             users_emb_next = self.Graph_Comb(users_emb_social, users_emb_interaction)
             all_emb = torch.cat([users_emb_next, items_emb_next])
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
-        final_embs = torch.mean(embs, dim=1)
+        if self.layer_attention:
+            attn = torch.softmax(self.attention_weights, dim=0)
+            final_embs = torch.sum(embs * attn.view(1, -1, 1), dim=1)
+        else:
+            final_embs = torch.mean(embs, dim=1)
         users, items = torch.split(final_embs, [self.num_users, self.num_items])
         self.final_user, self.final_item = users, items
         return users, items
