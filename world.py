@@ -22,7 +22,8 @@ all_dataset = ['lastfm', 'ciao']
 all_models = ['bpr', 'LightGCN', 'SocialLGN']
 
 config['layer'] = args.layer
-config['layer_attention'] = args.layer_attention
+config['subgraph_selection'] = args.subgraph_selection
+config['max_neighbors'] = args.max_neighbors
 
 config['bpr_batch_size'] = args.bpr_batch
 config['latent_dim_rec'] = args.recdim

@@ -1,6 +1,9 @@
 import world
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import random
+import numpy as np
 
 
 class PureBPR(nn.Module):
@@ -42,12 +45,65 @@ class PureBPR(nn.Module):
         return loss, reg_loss
 
 
+class SubgraphSelection(nn.Module):
+    def __init__(self, max_neighbors):
+        super(SubgraphSelection, self).__init__()
+        self.max_neighbors = max_neighbors
+        self.cached_adj = None
+        self.last_shape = None
+
+    def forward(self, adj_matrix, embeddings):
+        # Only resample if shape changes (e.g., at init or if graph changes)
+        if self.cached_adj is not None and adj_matrix.size() == self.last_shape:
+            return self.cached_adj
+
+        device = embeddings.device
+        indices = adj_matrix._indices().cpu().numpy()
+        values = adj_matrix._values().cpu().numpy()
+        num_nodes = adj_matrix.size(0)
+
+        # Group neighbors by source node using numpy for speed
+        from collections import defaultdict
+        neighbors_dict = defaultdict(list)
+        for src, dst, val in zip(indices[0], indices[1], values):
+            neighbors_dict[src].append((dst, val))
+
+        new_src = []
+        new_dst = []
+        new_val = []
+
+        for src in range(num_nodes):
+            neighbors = neighbors_dict.get(src, [])
+            if len(neighbors) > self.max_neighbors:
+                idx = np.random.choice(len(neighbors), self.max_neighbors, replace=False)
+                sampled = [neighbors[i] for i in idx]
+            else:
+                sampled = neighbors
+            for dst, val in sampled:
+                new_src.append(src)
+                new_dst.append(dst)
+                new_val.append(val)
+
+        if not new_src:
+            self.cached_adj = adj_matrix
+            self.last_shape = adj_matrix.size()
+            return adj_matrix
+
+        new_indices = torch.tensor([new_src, new_dst], dtype=torch.long, device=device)
+        new_values = torch.tensor(new_val, dtype=torch.float, device=device)
+        sampled_adj = torch.sparse.FloatTensor(new_indices, new_values, adj_matrix.size()).coalesce()
+        self.cached_adj = sampled_adj
+        self.last_shape = adj_matrix.size()
+        return sampled_adj
+
+
 class LightGCN(nn.Module):
     def __init__(self, config, dataset):
         super(LightGCN, self).__init__()
         self.config = config
         self.dataset = dataset
         self.layer_attention = config.get('layer_attention', 1)
+        self.subgraph_selection = config.get('subgraph_selection', 1)
         self._init_weight()
 
     def _init_weight(self):
@@ -68,6 +124,8 @@ class LightGCN(nn.Module):
         if self.layer_attention:
             # 层注意力参数，初始化为均匀分布
             self.attention_weights = nn.Parameter(torch.ones(self.n_layers + 1) / (self.n_layers + 1))
+        if self.subgraph_selection:
+            self.neighbor_selector = SubgraphSelection(self.config['max_neighbors'])
         print(f"{world.model_name} is already to go")
 
     def computer(self):
@@ -79,6 +137,8 @@ class LightGCN(nn.Module):
         all_emb = torch.cat([users_emb, items_emb])
         embs = [all_emb]
         G = self.interactionGraph
+        if self.subgraph_selection:
+            G = self.neighbor_selector(G, all_emb)
 
         for layer in range(self.n_layers):
             all_emb = torch.sparse.mm(G, all_emb)
@@ -139,6 +199,11 @@ class SocialLGN(LightGCN):
         all_emb = torch.cat([users_emb, items_emb])
         A = self.interactionGraph
         S = self.socialGraph
+
+        if self.subgraph_selection:
+            A = self.neighbor_selector(A, all_emb)
+            S = self.neighbor_selector(S, users_emb)
+
         embs = [all_emb]
         for layer in range(self.n_layers):
             users_emb, items_emb = torch.split(all_emb, [self.num_users, self.num_items])

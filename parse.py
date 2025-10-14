@@ -20,6 +20,11 @@ def parse_args():
                         help="the layer num of graphs")
     parser.add_argument('--layer_attention', type=int, default=1,
                         help="use layer attention (1: enable, 0: disable)")
+    # subgraph neighbor selection
+    parser.add_argument('--subgraph_selection', type=int, default=1,
+                        help="use subgraph neighbor selection (1: enable, 0: disable)")
+    parser.add_argument('--max_neighbors', type=int, default=3,
+                        help="maximum number of neighbors to sample")
     # normally unchanged
     parser.add_argument('--topks', nargs='?', default="[10]",
                         help="@k test list")
