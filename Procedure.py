@@ -71,6 +71,37 @@ def test_one_batch(X, item_embeddings=None, k_list=None):
             'ndcg': np.array(ndcg),
             'diversity': np.array(diversity) if diversity else None}
 
+def mmr_rerank(item_embeddings, top_k_items, lambda_mmr=0.5):
+    """
+    Perform MMR re-ranking to balance relevance and diversity.
+    :param item_embeddings: Embeddings of all items.
+    :param top_k_items: Top-K items predicted for a user.
+    :param lambda_mmr: Trade-off parameter between relevance and diversity.
+    :return: Re-ranked items.
+    """
+    selected_items = []
+    candidate_items = list(top_k_items)
+    while len(selected_items) < len(top_k_items) // 2:
+        best_item = None
+        best_score = -float('inf')
+        for item in candidate_items:
+            relevance = 1.0  # Assume relevance is uniform for simplicity
+            diversity = 0.0
+            for selected_item in selected_items:
+                diversity += torch.cosine_similarity(
+                    torch.tensor(item_embeddings[item]),
+                    torch.tensor(item_embeddings[selected_item]),
+                    dim=0
+                ).item()
+            diversity = diversity / len(selected_items) if selected_items else 0.0
+            mmr_score = lambda_mmr * relevance - (1 - lambda_mmr) * diversity
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_item = item
+        selected_items.append(best_item)
+        candidate_items.remove(best_item)
+    return selected_items
+
 def Test(dataset, Recmodel, epoch, cold=False, w=None):
     u_batch_size = world.config['test_u_batch_size']
     if cold:
@@ -165,6 +196,13 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
         results['novelty'] = np.array([novelty] * len(world.topks))  
         
         print(f"新颖性（Novelty）: {novelty}")
-        print(results)
+        
+        # Apply MMR re-ranking
+        if item_embeddings is not None:
+            reranked_items = []
+            lambda_mmr = world.config['lambda_mmr']  # Get lambda_mmr from the configuration
+            for user_idx, top_k_items in enumerate(rating_K.cpu().numpy()):
+                reranked_items.append(mmr_rerank(item_embeddings, top_k_items, lambda_mmr=lambda_mmr))
+            rating_K = torch.tensor(reranked_items)
 
         return results

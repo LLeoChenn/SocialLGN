@@ -12,6 +12,7 @@ from register import dataset
 
 # ==============================
 utils.set_seed(world.seed)
+world.config['lambda_mmr'] = float(world.args.lambda_mmr)  # Add lambda_mmr to the configuration
 print(">>SEED:", world.seed)
 # ==============================
 torch.autograd.set_detect_anomaly(True)
@@ -126,4 +127,4 @@ finally:
     # history_file = weight_file.replace('.pth', '_history_test.csv')
     history_file = 'test.csv'
     train_history.to_csv(history_file,mode='a', index=False)
-    print(f"\n训练历史已保存到: {history_file}")  
+    print(f"\n训练历史已保存到: {history_file}")
