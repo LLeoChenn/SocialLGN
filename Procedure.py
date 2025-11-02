@@ -71,40 +71,36 @@ def test_one_batch(X, item_embeddings=None, k_list=None):
             'ndcg': np.array(ndcg),
             'diversity': np.array(diversity) if diversity else None}
 
-def mmr_rerank(item_embeddings, top_k_items, scores, lambda_mmr=0.5):
+def mmr_rerank(item_embeddings, top_k_items, scores, lambda_mmr=0.5, T=2):
     """
     高效MMR重排序，使用numpy批量计算相似度，避免循环和dict。
     :param item_embeddings: Embeddings of all items.
     :param top_k_items: Top-K items predicted for a user.
     :param scores: Predicted scores for top_k_items (same order as top_k_items).
     :param lambda_mmr: Trade-off parameter between relevance and diversity.
-    :return: Re-ranked items (length K//2).
+    :param T: 筛选比例，输出K//T个物品
+    :return: Re-ranked items (length K//T).
     """
     K = len(top_k_items)
-    if K <= 1:
+    if K <= 1 or T < 1:
         return list(top_k_items)
-    # 取出候选物品的embedding
+    select_num = max(1, K // T)
     emb_matrix = item_embeddings[top_k_items]  # shape: [K, emb_dim]
-    # 归一化
     emb_norm = emb_matrix / (np.linalg.norm(emb_matrix, axis=1, keepdims=True) + 1e-8)
-    # 计算所有候选物品两两之间的余弦相似度矩阵
     sim_matrix = np.dot(emb_norm, emb_norm.T)  # shape: [K, K]
-    np.fill_diagonal(sim_matrix, 0.0)  # 自己和自己相似度设为0
+    np.fill_diagonal(sim_matrix, 0.0)
     selected = []
     candidate = list(range(K))
     scores = np.array(scores)
-    while len(selected) < K // 2:
+    while len(selected) < select_num:
         if not selected:
-            # 首轮直接选分数最高的
             idx = np.argmax(scores[candidate])
         else:
-            # 对每个候选，计算与已选最大相似度
             max_sim = sim_matrix[candidate][:, selected].max(axis=1) if selected else np.zeros(len(candidate))
             mmr_score = lambda_mmr * scores[candidate] - (1 - lambda_mmr) * max_sim
             idx = np.argmax(mmr_score)
         selected.append(candidate[idx])
         candidate.pop(idx)
-    # 返回原始物品id顺序
     return [top_k_items[i] for i in selected]
 
 def Test(dataset, Recmodel, epoch, cold=False, w=None):
@@ -145,7 +141,7 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
             item_embeddings = None
 
         lambda_mmr = world.config['lambda_mmr'] if item_embeddings is not None else None
-
+        mmr_T = world.config.get('mmr_T', 2)
         for batch_users in utils.minibatch(users, batch_size=u_batch_size):
             allPos = dataset.getUserPosItems(batch_users)
             groundTrue = [testDict[u] for u in batch_users]
@@ -170,12 +166,12 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
                 for user_idx in range(rating_K_np.shape[0]):
                     top_k_items = rating_K_np[user_idx]
                     top_k_scores = scores_np[user_idx]
-                    mmr_items = mmr_rerank(item_embeddings, top_k_items, top_k_scores, lambda_mmr=lambda_mmr)
+                    mmr_items = mmr_rerank(item_embeddings, top_k_items, top_k_scores, lambda_mmr=lambda_mmr, T=mmr_T)
                     reranked_items.append(mmr_items)
                     reranked_scores.append([top_k_scores[list(top_k_items).index(i)] for i in mmr_items])
                 rating_K = torch.tensor(reranked_items)
                 scores = torch.tensor(reranked_scores)
-                used_K = max_K // 2
+                used_K = max(1, max_K // mmr_T)
             else:
                 used_K = max_K
             users_list.append(batch_users)

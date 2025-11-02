@@ -13,6 +13,7 @@ from register import dataset
 # ==============================
 utils.set_seed(world.seed)
 world.config['lambda_mmr'] = float(world.args.lambda_mmr)  # Add lambda_mmr to the configuration
+world.config['mmr_T'] = int(world.args.mmr_T)  # Add mmr_T to the configuration
 print(">>SEED:", world.seed)
 # ==============================
 torch.autograd.set_detect_anomaly(True)
@@ -125,6 +126,6 @@ finally:
     
     # 保存训练历史到CSV文件
     # history_file = weight_file.replace('.pth', '_history_test.csv')
-    history_file = 'test.csv'
+    history_file = 'lastfm_lightGCN_K200_lamda_05.csv'
     train_history.to_csv(history_file,mode='a', index=False)
     print(f"\n训练历史已保存到: {history_file}")
