@@ -31,4 +31,6 @@ def parse_args():
                         help="trade-off parameter for MMR (0: focus on diversity, 1: focus on relevance)")
     parser.add_argument('--mmr_T', type=int, default=4,
                         help="MMR re-ranking: select K//T items from K candidates (T>=1)")
+    parser.add_argument('--neighbor_dropout', type=float, default=0,
+                help="probability to drop neighbors in LightGCN (0~1)")
     return parser.parse_args()

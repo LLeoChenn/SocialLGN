@@ -72,17 +72,36 @@ class LightGCN(nn.Module):
 
     def computer(self):
         """
-        propagate methods for lightGCN
+        propagate methods for lightGCN with neighbor dropout
         """
         users_emb = self.embedding_user.weight
         items_emb = self.embedding_item.weight
-        all_emb = torch.cat([users_emb, items_emb])
+        all_emb = torch.cat([users_emb, items_emb])  # 拼接用户和物品初始嵌入
         embs = [all_emb]
-        G = self.interactionGraph
+        G = self.interactionGraph  # 原始交互图（稀疏矩阵）
 
         for layer in range(self.n_layers):
-            all_emb = torch.sparse.mm(G, all_emb)
+            # 核心：对当前层的邻居进行随机丢弃
+            if self.config['neighbor_dropout'] > 0:
+                # 生成与 G 相同结构的掩码（0表示丢弃，1表示保留）
+                mask = torch.rand(G._values().shape, device=G.device) > self.config['neighbor_dropout']
+                # 只保留未被丢弃的边，权重不变（也可选择缩放权重以保持期望一致）
+                dropped_values = G._values() * mask.float()
+                # 构建丢弃后的稀疏矩阵
+                G_dropped = torch.sparse_coo_tensor(
+                    indices=G._indices(),
+                    values=dropped_values,
+                    size=G.size(),
+                    device=G.device
+                )
+            else:
+                G_dropped = G  # 不丢弃时使用原始图
+
+            # 用丢弃后的图进行卷积传播
+            all_emb = torch.sparse.mm(G_dropped, all_emb)
             embs.append(all_emb)
+
+        # 融合多层嵌入（与原逻辑一致）
         embs = torch.stack(embs, dim=1)  # [num_nodes, n_layers+1, dim]
         if self.layer_attention:
             # softmax归一化
