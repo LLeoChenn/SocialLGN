@@ -158,7 +158,7 @@ def Test(dataset, Recmodel, epoch, cold=False, w=None):
             # 先取max_K个候选
             scores, rating_K = torch.topk(rating, k=max_K)
             # MMR重排序（如果需要）
-            if item_embeddings is not None and lambda_mmr is not None:
+            if item_embeddings is not None and lambda_mmr is not None and lambda_mmr < 1.0:
                 reranked_items = []
                 reranked_scores = []
                 rating_K_np = rating_K.cpu().numpy()
